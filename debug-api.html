@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Debug - Flow</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #results { margin: 20px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>API Connection Test</h1>
+    <div id="results"></div>
+    <button onclick="testAPI()">Test API Connection</button>
+    
+    <script>
+        async function testAPI() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Testing API connection...</p>';
+            
+            try {
+                console.log('Testing direct Render URL...');
+                const directResponse = await fetch('https://flow-travel-website.onrender.com/api/itineraries');
+                console.log('Direct response status:', directResponse.status);
+                
+                if (directResponse.ok) {
+                    const directData = await directResponse.json();
+                    console.log('Direct response data:', directData);
+                    results.innerHTML += `<p class="success">✅ Direct Render API works! Found ${directData.itineraries?.length || 0} itineraries</p>`;
+                } else {
+                    results.innerHTML += `<p class="error">❌ Direct Render API failed: ${directResponse.status}</p>`;
+                }
+                
+                console.log('Testing proxied URL...');
+                const proxiedResponse = await fetch('/api/itineraries');
+                console.log('Proxied response status:', proxiedResponse.status);
+                
+                if (proxiedResponse.ok) {
+                    const proxiedData = await proxiedResponse.json();
+                    console.log('Proxied response data:', proxiedData);
+                    results.innerHTML += `<p class="success">✅ Proxied API works! Found ${proxiedData.itineraries?.length || 0} itineraries</p>`;
+                } else {
+                    results.innerHTML += `<p class="error">❌ Proxied API failed: ${proxiedResponse.status}</p>`;
+                }
+                
+            } catch (error) {
+                console.error('Test error:', error);
+                results.innerHTML += `<p class="error">❌ Error: ${error.message}</p>`;
+            }
+        }
+        
+        // Auto-test on load
+        window.addEventListener('load', testAPI);
+    </script>
+</body>
+</html>
