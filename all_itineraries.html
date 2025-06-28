@@ -258,87 +258,71 @@
 
         function fetchItinerariesForDisplay() {
             loadingMsgAll.style.display = 'block';
+            loadingMsgAll.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading itineraries...';
             itinerariesGrid.innerHTML = '';
             noResultsMsg.style.display = 'none';
             allFetchedItineraries = [];
 
-            // Your Render backend URL
-            const BACKEND_API_URL = 'https://flow-travel-website.onrender.com';
-
-            // Try backend API first
-            fetch(`${BACKEND_API_URL}/api/itineraries`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Backend API failed: ${response.status} - ${response.statusText}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('✅ Backend API response:', data);
+            console.log('📋 Loading from Google Sheets (primary source)...');
+            
+            // Use Google Sheets as primary - it's reliable and fast
+            Papa.parse(GOOGLE_SHEET_CSV_URL, {
+                download: true,
+                header: true,
+                complete: function(results) {
+                    console.log('📋 CSV data received:', results.data.length, 'rows');
                     
-                    if (data.itineraries && data.itineraries.length > 0) {
-                        allFetchedItineraries = data.itineraries.map(trip => ({
-                            id: trip['id:'] || trip.id || trip.ID,
-                            title: trip['title:'] || trip.title || trip.Title,
-                            description: trip['description_long:'] || trip.description || trip.Description,
-                            duration_days: Number(trip['duration_days:'] || trip.duration_days || trip.Duration || 0),
-                            image_url: trip['image_url:'] || trip.image_url || trip.Image,
-                            arrival_city: trip['arrival_city:'] || trip.arrival_city || trip.ArrivalCity,
-                            departure_city: trip['departure_city:'] || trip.departure_city || trip.DepartureCity,
-                            region: trip['region_definition:'] || trip.region || trip.Region,
-                            primary_interest: trip['primary_interest_category:'] || trip.primary_interest || trip.Category,
-                            budget_tag: trip['budget_level_csv:'] || trip.budget_level || trip.Budget,
-                            approx_cost_usd_pp: Number(trip['approx_cost_usd_pp:'] || trip.approx_cost_usd_pp || trip.Cost || 0),
-                        }));
-                    }
+                    // Filter and process the data
+                    allFetchedItineraries = results.data.filter(row => {
+                        const hasId = row['id:'] || row['ID'] || row['Id'];
+                        const hasTitle = row['title: '] || row['title:'] || row['Title'] || row['TITLE'];
+                        return hasId && hasTitle && hasId.trim() !== '' && hasTitle.trim() !== '';
+                    }).map(row => ({
+                        id: row['id:'] || row['ID'] || row['Id'],
+                        title: row['title: '] || row['title:'] || row['Title'] || row['TITLE'],
+                        description: row['description_long: '] || row['description_long:'] || row['Description'] || 'Discover amazing destinations and create unforgettable memories on this incredible journey.',
+                        duration_days: Number(row['duration_days: '] || row['duration_days:'] || row['Duration'] || 7),
+                        image_url: row['image_url:'] || row['Image_URL'] || row['Image'] || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80',
+                        arrival_city: row['arrival_city: '] || row['arrival_city:'] || row['ArrivalCity'] || '',
+                        departure_city: row['departure_city:'] || row['departure_city:'] || row['DepartureCity'] || '',
+                        region: row['region_definition: '] || row['region_definition:'] || row['Region'] || '',
+                        primary_interest: row['primary_interest_category:'] || row['Category'] || 'Adventure',
+                        budget_tag: row['budget_level_csv:'] || row['Budget'] || 'Medium',
+                        approx_cost_usd_pp: Number(row['approx_cost_usd_pp:'] || row['Cost'] || 1500),
+                    }));
+                    
+                    console.log('✅ Processed itineraries:', allFetchedItineraries.length);
                     loadingMsgAll.style.display = 'none';
-                    displayItineraries(allFetchedItineraries);
-                })
-                .catch(error => {
-                    console.log('⚠️ Backend failed, trying Google Sheets fallback...');
-                    console.error('Backend error:', error);
                     
-                    // Fallback to CSV parsing
-                    Papa.parse(GOOGLE_SHEET_CSV_URL, {
-                        download: true,
-                        header: true,
-                        complete: function(results) {
-                            console.log('📋 Google Sheets CSV data:', results.data);
-                            
-                            allFetchedItineraries = results.data.filter(row => {
-                                // More flexible filtering
-                                const hasId = row['id:'] || row['ID'] || row['Id'];
-                                const hasTitle = row['title: '] || row['title:'] || row['Title'] || row['TITLE'];
-                                return hasId && hasTitle;
-                            }).map(row => ({
-                                id: row['id:'] || row['ID'] || row['Id'],
-                                title: row['title: '] || row['title:'] || row['Title'] || row['TITLE'],
-                                description: row['description_long: '] || row['description_long:'] || row['Description'],
-                                duration_days: Number(row['duration_days: '] || row['duration_days:'] || row['Duration'] || 0),
-                                image_url: row['image_url:'] || row['Image_URL'] || row['Image'],
-                                arrival_city: row['arrival_city: '] || row['arrival_city:'] || row['ArrivalCity'],
-                                departure_city: row['departure_city:'] || row['departure_city:'] || row['DepartureCity'],
-                                region: row['region_definition: '] || row['region_definition:'] || row['Region'],
-                                primary_interest: row['primary_interest_category:'] || row['Category'],
-                                budget_tag: row['budget_level_csv:'] || row['Budget'],
-                                approx_cost_usd_pp: Number(row['approx_cost_usd_pp:'] || row['Cost'] || 0),
-                            }));
-                            
-                            loadingMsgAll.style.display = 'none';
-                            displayItineraries(allFetchedItineraries);
-                        },
-                        error: function(err) {
-                            console.error('❌ Google Sheets CSV parsing failed:', err);
-                            loadingMsgAll.style.display = 'none';
-                            noResultsMsg.innerHTML = `
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <br>Could not load itineraries. Please try again later.
-                                <br><small>Both backend API and Google Sheets failed to load.</small>
-                            `;
-                            noResultsMsg.style.display = 'block';
-                        }
-                    });
-                });
+                    if (allFetchedItineraries.length > 0) {
+                        displayItineraries(allFetchedItineraries);
+                    } else {
+                        showNoResults();
+                    }
+                },
+                error: function(err) {
+                    console.error('❌ Google Sheets loading failed:', err);
+                    loadingMsgAll.style.display = 'none';
+                    showNoResults();
+                }
+            });
+        }
+
+        function showNoResults() {
+            noResultsMsg.innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 3em; color: #ffc107; margin-bottom: 20px;"></i>
+                    <h3 style="color: var(--text-dark); margin-bottom: 15px;">No Itineraries Available</h3>
+                    <p style="color: var(--text-medium); margin-bottom: 20px;">
+                        We're currently updating our travel catalog. Please try again in a few moments.
+                    </p>
+                    <button onclick="fetchItinerariesForDisplay()" 
+                            style="padding: 12px 24px; background: var(--accent-greenish-yellow); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                        🔄 Refresh
+                    </button>
+                </div>
+            `;
+            noResultsMsg.style.display = 'block';
         }
 
         function displayItineraries(itineraries) {

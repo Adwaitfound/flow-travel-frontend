@@ -189,66 +189,101 @@
         }
         
         async function testBackend() {
-            addResult('🔄 Testing backend connection...', 'info', 'backend');
+            addResult('🔄 Testing backend connection with timeout...', 'info', 'backend');
             
             try {
-                // Test 1: Basic connectivity
-                addResult('Testing basic connectivity to Render...', 'info', 'backend');
+                // Test 1: Basic connectivity with 15-second timeout
+                addResult('Testing basic connectivity to Render (15s timeout)...', 'info', 'backend');
                 
-                const basicResponse = await fetch(BACKEND_URL, {
-                    method: 'GET',
-                    mode: 'cors'
-                });
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                    addResult('⏰ Request timed out after 15 seconds - Render backend is sleeping or down', 'warning', 'backend');
+                    testResults.backend = false;
+                    addResult('💡 Solutions: 1) Visit backend URL directly to wake it up, 2) Wait 60-90 seconds, 3) Use Google Sheets as primary source', 'info', 'backend');
+                    updateSummary();
+                }, 15000); // 15 second timeout
                 
-                addResult(`✅ Basic connection: ${basicResponse.status} ${basicResponse.statusText}`, 'success', 'backend');
-                
-                // Test 2: API endpoint
-                addResult('Testing /api/itineraries endpoint...', 'info', 'backend');
-                
-                const apiResponse = await fetch(`${BACKEND_URL}/api/itineraries`, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    mode: 'cors'
-                });
-                
-                addResult(`📡 API Response: ${apiResponse.status} ${apiResponse.statusText}`, 
-                    apiResponse.ok ? 'success' : 'error', 'backend');
-                
-                if (apiResponse.ok) {
-                    const data = await apiResponse.json();
-                    const dataStr = JSON.stringify(data, null, 2);
+                try {
+                    const basicResponse = await fetch(BACKEND_URL, {
+                        method: 'GET',
+                        mode: 'cors',
+                        signal: controller.signal
+                    });
                     
-                    if (data.itineraries && Array.isArray(data.itineraries)) {
-                        addResult(`✅ API Data: Found ${data.itineraries.length} itineraries`, 'success', 'backend');
-                        addResult(`<pre>Sample data:\n${dataStr.substring(0, 500)}${dataStr.length > 500 ? '...' : ''}</pre>`, 'info', 'backend');
-                        testResults.backend = true;
+                    clearTimeout(timeoutId);
+                    addResult(`✅ Basic connection: ${basicResponse.status} ${basicResponse.statusText}`, 'success', 'backend');
+                    
+                    // Test 2: API endpoint with timeout
+                    addResult('Testing /api/itineraries endpoint (15s timeout)...', 'info', 'backend');
+                    
+                    const apiController = new AbortController();
+                    const apiTimeoutId = setTimeout(() => {
+                        apiController.abort();
+                        addResult('⏰ API request timed out - backend unresponsive', 'warning', 'backend');
+                        testResults.backend = false;
+                        updateSummary();
+                    }, 15000);
+                    
+                    const apiResponse = await fetch(`${BACKEND_URL}/api/itineraries`, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        mode: 'cors',
+                        signal: apiController.signal
+                    });
+                    
+                    clearTimeout(apiTimeoutId);
+                    addResult(`📡 API Response: ${apiResponse.status} ${apiResponse.statusText}`, 
+                        apiResponse.ok ? 'success' : 'error', 'backend');
+                    
+                    if (apiResponse.ok) {
+                        const data = await apiResponse.json();
+                        const dataStr = JSON.stringify(data, null, 2);
+                        
+                        if (data.itineraries && Array.isArray(data.itineraries)) {
+                            addResult(`✅ API Data: Found ${data.itineraries.length} itineraries`, 'success', 'backend');
+                            addResult(`<pre>Sample data:\n${dataStr.substring(0, 500)}${dataStr.length > 500 ? '...' : ''}</pre>`, 'info', 'backend');
+                            testResults.backend = true;
+                        } else {
+                            addResult(`⚠️ API Data: Unexpected format`, 'warning', 'backend');
+                            addResult(`<pre>Received:\n${dataStr.substring(0, 300)}...</pre>`, 'info', 'backend');
+                            testResults.backend = false;
+                        }
                     } else {
-                        addResult(`⚠️ API Data: Unexpected format - ${dataStr.substring(0, 200)}...`, 'warning', 'backend');
+                        const errorText = await apiResponse.text();
+                        addResult(`❌ API Error: ${errorText}`, 'error', 'backend');
                         testResults.backend = false;
                     }
-                } else {
-                    const errorText = await apiResponse.text();
-                    addResult(`❌ API Error: ${errorText}`, 'error', 'backend');
-                    testResults.backend = false;
+                    
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    
+                    if (error.name === 'AbortError') {
+                        addResult(`⏰ Request aborted due to timeout`, 'warning', 'backend');
+                        testResults.backend = false;
+                    } else {
+                        throw error;
+                    }
                 }
-                
-                // Test 3: Response headers
-                const headers = Object.fromEntries(apiResponse.headers.entries());
-                addResult(`<pre>Response Headers:\n${JSON.stringify(headers, null, 2)}</pre>`, 'info', 'backend');
                 
             } catch (error) {
                 addResult(`❌ Backend test failed: ${error.message}`, 'error', 'backend');
                 testResults.backend = false;
                 
                 if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    addResult(`🔒 Likely CORS issue or backend is completely down`, 'error', 'backend');
-                } else if (error.name === 'AbortError') {
-                    addResult(`⏰ Request timed out - backend may be sleeping (Render free tier)`, 'warning', 'backend');
+                    addResult(`🔒 Network error - CORS issue or backend completely down`, 'error', 'backend');
                 }
             }
+            
+            // Add links to manually check
+            addResult(`<div style="margin-top: 15px;">
+                <strong>Manual checks:</strong><br>
+                📍 <a href="${BACKEND_URL}" target="_blank">Visit backend directly</a><br>
+                📍 <a href="${BACKEND_URL}/api/itineraries" target="_blank">Check API endpoint</a>
+            </div>`, 'info', 'backend');
             
             updateSummary();
         }
